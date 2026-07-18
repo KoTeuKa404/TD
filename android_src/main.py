@@ -310,7 +310,7 @@ class IronvaleRoot(Widget):
             return
 
         # Circular settings button.
-        if point_distance((x, y), (64, 655)) <= 52:
+        if point_distance((x, y), (1216, 65)) <= 52:
             self.open_settings()
 
     def _handle_map_touch(self, x: float, y: float) -> None:
@@ -549,7 +549,7 @@ class IronvaleRoot(Widget):
         # Positions match the supplied 16:9 composition.
         self.image_asset("logo.png", 345, 288, 590, 427)
         self.image_asset("start.png", 425, 87, 430, 193)
-        self.image_asset("settings.png", 18, 608, 92, 94)
+        self.image_asset("settings.png", 1170, 18, 92, 94)
 
     def draw_world_map(self) -> None:
         # Base terrain
