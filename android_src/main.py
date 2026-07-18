@@ -24,6 +24,7 @@ from typing import Dict, List, Optional, Tuple
 
 from kivy.app import App
 from kivy.clock import Clock
+from kivy.core.image import Image as CoreImage
 from kivy.core.text import Label as CoreLabel
 from kivy.core.window import Window
 from kivy.graphics import Color, Ellipse, Line, Rectangle, RoundedRectangle, Triangle
@@ -91,6 +92,10 @@ class IronvaleRoot(Widget):
         self.toast_timer = 0.0
 
         self._text_cache: Dict[Tuple, object] = {}
+        self._texture_cache: Dict[str, object] = {}
+        self._asset_root = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "assets", "menu"
+        )
         self._animation_time = 0.0
 
         self.load_save()
@@ -104,22 +109,32 @@ class IronvaleRoot(Widget):
     # ------------------------------------------------------------------
 
     @property
+    def scale(self) -> float:
+        if not self.width or not self.height:
+            return 1.0
+        return min(self.width / VW, self.height / VH)
+
+    @property
     def sx(self) -> float:
-        return self.width / VW if self.width else 1.0
+        return self.scale
 
     @property
     def sy(self) -> float:
-        return self.height / VH if self.height else 1.0
+        return self.scale
 
     @property
-    def scale(self) -> float:
-        return min(self.sx, self.sy)
+    def viewport_x(self) -> float:
+        return self.x + (self.width - VW * self.scale) / 2.0
+
+    @property
+    def viewport_y(self) -> float:
+        return self.y + (self.height - VH * self.scale) / 2.0
 
     def vx(self, value: float) -> float:
-        return self.x + value * self.sx
+        return self.viewport_x + value * self.scale
 
     def vy(self, value: float) -> float:
-        return self.y + value * self.sy
+        return self.viewport_y + value * self.scale
 
     def _on_geometry_changed(self, *_args) -> None:
         self._text_cache.clear()
@@ -260,8 +275,8 @@ class IronvaleRoot(Widget):
 
     def _touch_to_virtual(self, touch) -> Point:
         return (
-            (touch.x - self.x) / self.sx,
-            (touch.y - self.y) / self.sy,
+            (touch.x - self.viewport_x) / self.scale,
+            (touch.y - self.viewport_y) / self.scale,
         )
 
     @staticmethod
@@ -289,12 +304,14 @@ class IronvaleRoot(Widget):
         return True
 
     def _handle_menu_touch(self, x: float, y: float) -> None:
-        if self._inside(x, y, 470, 275, 340, 76):
+        # START button.
+        if self._inside(x, y, 425, 87, 430, 193):
             self.open_world_map()
-        elif self._inside(x, y, 470, 185, 340, 68):
+            return
+
+        # Circular settings button.
+        if point_distance((x, y), (64, 655)) <= 52:
             self.open_settings()
-        elif self._inside(x, y, 470, 100, 340, 62):
-            App.get_running_app().stop()
 
     def _handle_map_touch(self, x: float, y: float) -> None:
         if self._inside(x, y, 22, 652, 150, 50):
@@ -447,6 +464,40 @@ class IronvaleRoot(Widget):
         self.color((1, 1, 1, 1))
         Rectangle(texture=texture, pos=(tx, ty), size=texture.size)
 
+    def asset_path(self, filename: str) -> str:
+        return os.path.join(self._asset_root, filename)
+
+    def texture(self, filename: str):
+        texture = self._texture_cache.get(filename)
+        if texture is None:
+            texture = CoreImage(self.asset_path(filename)).texture
+            self._texture_cache[filename] = texture
+        return texture
+
+    def image_asset(
+        self,
+        filename: str,
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+        opacity: float = 1.0,
+    ) -> None:
+        self.color((1, 1, 1, opacity))
+        Rectangle(
+            texture=self.texture(filename),
+            pos=(self.vx(x), self.vy(y)),
+            size=(width * self.scale, height * self.scale),
+        )
+
+    def fullscreen_image(self, filename: str) -> None:
+        self.color((1, 1, 1, 1))
+        Rectangle(
+            texture=self.texture(filename),
+            pos=self.pos,
+            size=self.size,
+        )
+
     def button(
         self,
         x: float,
@@ -475,6 +526,10 @@ class IronvaleRoot(Widget):
         self.canvas.clear()
 
         with self.canvas:
+            # Bars outside the 16:9 safe viewport on unusual aspect ratios.
+            self.color((0.018, 0.028, 0.025, 1))
+            Rectangle(pos=self.pos, size=self.size)
+
             if self.screen == "menu":
                 self.draw_menu()
             elif self.screen == "world_map":
@@ -487,46 +542,14 @@ class IronvaleRoot(Widget):
                 self.draw_toast()
 
     def draw_menu(self) -> None:
-        # Sky
-        self.rect(0, 0, VW, VH, (0.035, 0.075, 0.09, 1))
-        self.circle(1090, 610, 74, (0.95, 0.75, 0.30, 0.78))
-        self.circle(1090, 610, 105, (0.95, 0.66, 0.22, 0.08))
+        # The background is allowed to cover the whole physical display.
+        # Interactive UI stays inside the centered 1280x720 safe area.
+        self.fullscreen_image("background.png")
 
-        # Distant mountains
-        self.triangle([(0, 210), (230, 500), (450, 210)], (0.08, 0.16, 0.17, 1))
-        self.triangle([(270, 210), (610, 565), (920, 210)], (0.07, 0.14, 0.16, 1))
-        self.triangle([(700, 210), (1030, 520), (1280, 210)], (0.075, 0.15, 0.15, 1))
-
-        # Forest silhouettes
-        for x in range(-20, 1320, 52):
-            height = 78 + ((x * 17) % 90)
-            self.triangle(
-                [(x - 34, 155), (x, 155 + height), (x + 34, 155)],
-                (0.045, 0.115, 0.09, 1),
-            )
-            self.rect(x - 4, 118, 8, 50, (0.055, 0.07, 0.045, 1))
-
-        self.rect(0, 0, VW, 150, (0.025, 0.055, 0.045, 1))
-
-        # Logo panel
-        self.rect(330, 440, 620, 190, (0.045, 0.035, 0.025, 0.93), 28)
-        self.rect(340, 450, 600, 170, (0.22, 0.16, 0.075, 0.78), 22)
-        self.rect(365, 590, 550, 7, (0.92, 0.66, 0.20, 0.75), 3)
-
-        self.text("IRONVALE", 640, 552, 64, (1, 0.80, 0.29, 1))
-        self.text("DEFENSE", 640, 486, 37, (0.81, 0.90, 0.73, 1))
-
-        self.button(470, 275, 340, 76, "PLAY", (0.31, 0.56, 0.20, 1))
-        self.button(470, 185, 340, 68, "SETTINGS", (0.25, 0.39, 0.48, 1))
-        self.button(470, 100, 340, 62, "EXIT", (0.45, 0.25, 0.18, 1), text_size=21)
-
-        self.text(
-            "Campaign progress is saved automatically",
-            640,
-            55,
-            18,
-            (0.62, 0.71, 0.62, 1),
-        )
+        # Positions match the supplied 16:9 composition.
+        self.image_asset("logo.png", 345, 288, 590, 427)
+        self.image_asset("start.png", 425, 87, 430, 193)
+        self.image_asset("settings.png", 18, 608, 92, 94)
 
     def draw_world_map(self) -> None:
         # Base terrain
